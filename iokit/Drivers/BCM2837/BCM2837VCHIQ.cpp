@@ -38,9 +38,10 @@ static const uint64_t kBusWindow = 0x3F000000ULL;
  * VCHIQ node and will overwrite it with the actual L2 cache size ... we
  * have to use the VPU firmware's compatibility value of 32". The firmware
  * here is given no Linux device tree, so it uses 32 -- measured on a real
- * Pi 3 (2026-10-17): with 64 (bcm2836_drvdata's value) the last
- * (offset + length) % 64 - 8 bytes of every decoded frame were stale;
- * with 32 hwdec_compare is clean. The fragments are two lines (head,
+ * Pi 3 (2026-10-17): with 64 (bcm2836_drvdata's value) the last 32 bytes
+ * but 8 of every decoded 1280x720 frame were stale (32 bytes off by tens,
+ * at end-40 .. end-9); with 32 every sample is within 1 of FFmpeg's
+ * software decoder (hwdec_compare, 297 frames). The fragments are two lines (head,
  * tail) each, MAX_FRAGMENTS of them (VCHIQ_NUM_CURRENT_BULKS * 2).
  */
 static const uint32_t kCacheLine = 32;
