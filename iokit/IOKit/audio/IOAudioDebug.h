@@ -70,7 +70,12 @@
 			}
 	#endif
 #else
-    #define DEBUG_LEVEL 3
+    /* iokit (Pi 3 port): 0, not Apple's 3. Here os_log goes to the console
+     * and the kernel message buffer, and level 3 includes calls made on
+     * every IO cycle (IOAudioEngine::getStatus(), ~94 a second with audiod
+     * keeping the engine running), which flooded both. Errors still log
+     * through audioErrorIOLog. */
+    #define DEBUG_LEVEL 0
 
     #include <os/log.h>
     #define audioDebugIOLog( level, message... ) \
