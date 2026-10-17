@@ -196,6 +196,8 @@ void vchiq_xnu_free(const void *p);
 extern int scnprintf(char *, size_t, const char *, ...) __printflike(3, 4);
 
 #define strscpy(d, s, n) strlcpy((d), (s), (n))
+/* XNU has no sprintf(); the core only sprintf()s into char arrays. */
+#define sprintf(buf, ...) snprintf((buf), sizeof(buf), __VA_ARGS__)
 
 /* ------------------------------------------------------------- user copy */
 #define copy_from_user(dst, src, n)     copyin((user_addr_t)(uintptr_t)(src), (dst), (n))
