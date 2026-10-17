@@ -31,11 +31,19 @@ static const uint32_t kBusAlias = 0xC0000000U;
 static const uint64_t kBusWindow = 0x3F000000ULL;
 
 /*
- * vchiq_arm.c bcm2836_drvdata.cache_line_size: the Cortex-A53's 64-byte
- * lines. The fragments are two lines (head, tail) each, MAX_FRAGMENTS of
- * them (VCHIQ_NUM_CURRENT_BULKS * 2).
+ * The cache line size the VPU firmware assumes for the pagelist fragments
+ * (the partial lines at the ends of a receive, which it writes into the
+ * shared block instead of the client's memory). Linux's vchiq_arm.c:
+ * "Modern VPU firmware looks for a DT "cache-line-size" property in the
+ * VCHIQ node and will overwrite it with the actual L2 cache size ... we
+ * have to use the VPU firmware's compatibility value of 32". The firmware
+ * here is given no Linux device tree, so it uses 32 -- measured on a real
+ * Pi 3 (2026-10-17): with 64 (bcm2836_drvdata's value) the last
+ * (offset + length) % 64 - 8 bytes of every decoded frame were stale;
+ * with 32 hwdec_compare is clean. The fragments are two lines (head,
+ * tail) each, MAX_FRAGMENTS of them (VCHIQ_NUM_CURRENT_BULKS * 2).
  */
-static const uint32_t kCacheLine = 64;
+static const uint32_t kCacheLine = 32;
 static const uint32_t kFragmentSize = 2 * kCacheLine;
 static const uint32_t kMaxFragments = 32 * 2;
 
