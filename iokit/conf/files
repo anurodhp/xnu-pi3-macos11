@@ -88,6 +88,12 @@ iokit/Drivers/BCM2837/v3d_kglue.c		optional iokitcpp
 iokit/Drivers/BCM2837/vc4_validate.c		optional iokitcpp
 iokit/Drivers/BCM2837/vc4_validate_shaders.c	optional iokitcpp
 iokit/Drivers/BCM2837/vc4_render_cl.c		optional iokitcpp
+iokit/Drivers/BCM2837/BCM2837VCHIQ.cpp		optional iokitcpp
+iokit/Drivers/BCM2837/BCM2837VCHIQUserClient.cpp	optional iokitcpp
+iokit/Drivers/BCM2837/vchiq_core.c		optional iokitcpp
+iokit/Drivers/BCM2837/vchiq_arm.c		optional iokitcpp
+iokit/Drivers/BCM2837/vchiq_dev.c		optional iokitcpp
+iokit/Drivers/BCM2837/vchiq_xnu.c		optional iokitcpp
 
 iokit/Kernel/IODeviceTreeSupport.cpp			optional iokitcpp
 
