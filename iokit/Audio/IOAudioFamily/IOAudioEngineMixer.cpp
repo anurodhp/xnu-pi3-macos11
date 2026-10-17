@@ -32,6 +32,25 @@ void _disable_preemption(void);
 void _enable_preemption(void);
 }
 
+// With preemption disabled a page fault cannot be served: vm_fault() returns
+// KERN_FAILURE when get_preemption_level() != 0 (osfmk/vm/vm_fault.c:3983) and
+// the abort handler panics ("Kernel data abort"). The client source buffer is a
+// wired, lazily entered kernel mapping of user memory, and only its first page
+// has been touched by registerClientBuffer64 (it reads the descriptor), so the
+// first time the add loop reaches the second page it faulted (DARW-322). Touch
+// every page of a range before disabling preemption so the loop never faults.
+static inline void prefaultRange(const void *p, size_t bytes)
+{
+	const uintptr_t kStride = 4096;			// never larger than the VM page size, so no page is skipped
+	uintptr_t a = (uintptr_t)p;
+	uintptr_t end = a + bytes;
+	if (bytes == 0) return;
+	for (uintptr_t q = a; q < end; q = (q & ~(kStride - 1)) + kStride) {
+		(void)*(volatile const uint8_t *)q;
+	}
+	(void)*(volatile const uint8_t *)(end - 1);
+}
+
 
 IOReturn IOAudioEngine::mixOutputSamples(const void *sourceBuf, void *mixBuf, UInt32 firstSampleFrame, UInt32 numSampleFrames, const IOAudioStreamFormat *streamFormat, IOAudioStream *audioStream)
 {
@@ -57,6 +76,8 @@ IOReturn IOAudioEngine::mixOutputSamples(const void *sourceBuf, void *mixBuf, UI
 		// unit strides is exactly resultBuf[i] = source1[i] + source2[i]; the
 		// output may alias source2 (floatMixBuf == floatSource2Buf), which
 		// element-wise in-order addition handles.
+		prefaultRange(floatSource1Buf, numSamps * sizeof(float));
+		prefaultRange(floatMixBuf, numSamps * sizeof(float));
 		_disable_preemption();
 		for (__darwin_size_t i = 0; i < numSamps; i++)
 			floatMixBuf[i * resultStride] = floatSource1Buf[i * strideOne] + floatSource2Buf[i * strideTwo];
