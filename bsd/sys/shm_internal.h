@@ -143,6 +143,12 @@ __BEGIN_DECLS
 void    shmexit(struct proc *);
 int     shmfork(struct proc *, struct proc *);
 __private_extern__ void shmexec(struct proc *);
+#ifdef XNU_KERNEL_PRIVATE
+#include <mach/mach_types.h>
+/* bsd/kern/sysv_shm.c: back an unattached segment with a named entry */
+int     sysv_shm_set_backing(int shmid, ipc_port_t entry, mach_vm_size_t size,
+    void (*release)(void *), void *arg);
+#endif
 
 __END_DECLS
 

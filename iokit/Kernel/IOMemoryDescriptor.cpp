@@ -796,6 +796,55 @@ IOMemoryDescriptorMapAlloc(vm_map_t map, void * _ref)
 	return err;
 }
 
+/*
+ * BCM2837 (BCM2837V3D zero-copy present, iokit docs/video-decode.md): a send
+ * right to the named entry behind this descriptor, for a kernel client that
+ * hands the memory to another subsystem (SysV shm, bsd/kern/sysv_shm.c
+ * sysv_shm_set_backing) rather than mapping it itself. Only for memory one
+ * entry covers -- in practice a physically contiguous kIOMemoryTypePhysical64
+ * descriptor, whose entry is a device pager with the descriptor's cache mode
+ * (memoryReferenceCreate's physical branch), populated here. The
+ * descriptor must outlive every mapping made from the entry: it owns the
+ * device pager.
+ */
+IOReturn
+IOGeneralMemoryDescriptor::copyNamedEntry(ipc_port_t * entry, mach_vm_size_t * size)
+{
+	IOReturn err = kIOReturnSuccess;
+
+	LOCK;
+	if (!_memRef) {
+		err = memoryReferenceCreate(kIOMemoryReferenceWrite, &_memRef);
+	}
+	if (kIOReturnSuccess == err && _memRef->count != 1) {
+		err = kIOReturnUnsupported;
+	}
+	/* Fill the device pager now. handleFault() does nothing in this xnu:
+	 * IOKit populates a physical descriptor's pager when it maps it itself
+	 * (doMap -> populateDevicePager), so an entry mapped some other way
+	 * would fault in a contiguous object whose base was never set --
+	 * physical address 0 (found on a Pi 3: the X server read the first
+	 * pages of RAM). No address map: populate only, no early fault. */
+	if (kIOReturnSuccess == err && reserved != NULL && reserved->dp.devicePager != NULL) {
+		err = populateDevicePager(reserved->dp.devicePager, NULL, 0, 0, getLength(), 0);
+	} else if (kIOReturnSuccess == err) {
+		err = kIOReturnUnsupported;     /* not a physical descriptor */
+	}
+	if (kIOReturnSuccess == err) {
+		*entry = ipc_port_copy_send(_memRef->entries[0].entry);
+		*size = _memRef->entries[0].size;
+	}
+	UNLOCK;
+	return err;
+}
+
+extern "C" IOReturn
+IOGeneralMemoryDescriptorCopyNamedEntry(IOMemoryDescriptor * md, ipc_port_t * entry, mach_vm_size_t * size)
+{
+	IOGeneralMemoryDescriptor * gmd = OSDynamicCast(IOGeneralMemoryDescriptor, md);
+	return gmd ? gmd->copyNamedEntry(entry, size) : kIOReturnBadArgument;
+}
+
 IOReturn
 IOGeneralMemoryDescriptor::memoryReferenceMap(
 	IOMemoryReference * ref,

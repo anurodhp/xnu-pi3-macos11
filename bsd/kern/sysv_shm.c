@@ -150,6 +150,9 @@ struct shm_handle {
 	void * shm_object;                      /* named entry for this chunk*/
 	memory_object_size_t shm_handle_size;   /* size of this chunk */
 	struct shm_handle *shm_handle_next;     /* next chunk */
+	/* sysv_shm_set_backing(): called once the segment is gone */
+	void (*shm_release)(void *);
+	void *shm_release_arg;
 };
 
 struct shmmap_state {
@@ -277,6 +280,9 @@ shm_deallocate_segment(struct shmid_kernel *shmseg)
 	    shm_handle = shm_handle_next) {
 		shm_handle_next = shm_handle->shm_handle_next;
 		mach_memory_entry_port_release(shm_handle->shm_object);
+		if (shm_handle->shm_release != NULL) {
+			shm_handle->shm_release(shm_handle->shm_release_arg);
+		}
 		FREE(shm_handle, M_SHM);
 	}
 	shmseg->u.shm_internal = USER_ADDR_NULL;                /* tunnel */
@@ -307,6 +313,71 @@ shm_deallocate_segment(struct shmid_kernel *shmseg)
 	/* Reset the MAC label */
 	mac_sysvshm_label_recycle(shmseg);
 #endif
+}
+
+/*
+ * BCM2837 (BCM2837V3D zero-copy present): replace the memory of a segment
+ * nobody has attached yet with the named entry `entry` (`size` bytes, at
+ * least the segment's size; the send right is consumed on success). The
+ * caller must be allowed to IPC_RMID the segment. Once the segment is
+ * deallocated -- every attach detached, IPC_RMID done, so no mapping of
+ * `entry` made through it remains -- release(arg) is called (with the
+ * SysV shm lock held). The anonymous memory shmget made is freed; the
+ * segment keeps its size and its share of shmall.
+ */
+int
+sysv_shm_set_backing(int shmid, ipc_port_t entry, mach_vm_size_t size,
+    void (*release)(void *), void *arg)
+{
+	struct shmid_kernel *shmseg;
+	struct shm_handle *h, *next;
+	int error = 0;
+
+	SYSV_SHM_SUBSYS_LOCK();
+	if (!shm_inited) {
+		error = EINVAL;
+		goto out;
+	}
+	shmseg = shm_find_segment_by_shmid(shmid);
+	if (shmseg == NULL) {
+		error = EINVAL;
+		goto out;
+	}
+	error = ipcperm(kauth_cred_get(), &shmseg->u.shm_perm, IPC_M);
+	if (error) {
+		goto out;
+	}
+	if (shmseg->u.shm_nattch != 0) {
+		error = EBUSY;
+		goto out;
+	}
+	if (size < mach_vm_round_page(shmseg->u.shm_segsz)) {
+		error = EINVAL;
+		goto out;
+	}
+	MALLOC(h, struct shm_handle *, sizeof(struct shm_handle), M_SHM, M_WAITOK);
+	if (h == NULL) {
+		error = ENOMEM;
+		goto out;
+	}
+	for (struct shm_handle *old = CAST_DOWN(void *, shmseg->u.shm_internal); /* tunnel */
+	    old != NULL; old = next) {
+		next = old->shm_handle_next;
+		mach_memory_entry_port_release(old->shm_object);
+		if (old->shm_release != NULL) {
+			old->shm_release(old->shm_release_arg);
+		}
+		FREE(old, M_SHM);
+	}
+	h->shm_object = entry;
+	h->shm_handle_size = mach_vm_round_page(shmseg->u.shm_segsz);
+	h->shm_handle_next = NULL;
+	h->shm_release = release;
+	h->shm_release_arg = arg;
+	shmseg->u.shm_internal = CAST_USER_ADDR_T(h);           /* tunnel */
+out:
+	SYSV_SHM_SUBSYS_UNLOCK();
+	return error;
 }
 
 static int
@@ -866,6 +937,8 @@ shmget_allocate_segment(struct proc *p, struct shmget_args *uap, int mode,
 		shm_handle->shm_object = mem_object;
 		shm_handle->shm_handle_size = size;
 		shm_handle->shm_handle_next = NULL;
+		shm_handle->shm_release = NULL;
+		shm_handle->shm_release_arg = NULL;
 		if (shm_handle_next_p == NULL) {
 			shmseg->u.shm_internal = CAST_USER_ADDR_T(shm_handle);/* tunnel */
 		} else {

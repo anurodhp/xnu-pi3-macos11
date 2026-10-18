@@ -1086,6 +1086,10 @@ public:
 		IOOptionBits         options,
 		IOMemoryReference ** reference);
 
+	/* BCM2837: a send right to the memory's single named entry (see
+	 * IOGeneralMemoryDescriptorCopyNamedEntry in IOMemoryDescriptor.cpp). */
+	IOReturn copyNamedEntry(ipc_port_t * entry, mach_vm_size_t * size);
+
 	IOReturn memoryReferenceMap(IOMemoryReference * ref,
 	    vm_map_t            map,
 	    mach_vm_size_t      inoffset,
