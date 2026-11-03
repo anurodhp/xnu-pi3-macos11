@@ -427,7 +427,12 @@ static inline u_int uimax(u_int a, u_int b) { return a > b ? a : b; }
  *     once so_pcb is NULL (soclose_locked/sofreelastref), which the
  *     NetBSD *_detach_pcb does.
  *   - send: xnu passes PRUS_OOB in flags; NetBSD has a separate sendoob.
- *   - ioctl: EPASSTHROUGH (not ours) becomes EOPNOTSUPP.
+ *   - ioctl: xnu's soioctl holds the socket lock -- bt_lock -- around
+ *     pru_control (bsd/kern/sys_socket.c soioctl), but NetBSD calls pr_ioctl
+ *     unlocked and hci_ioctl takes bt_lock itself (hci_socket.c hci_ioctl),
+ *     which deadlocked `btconfig` on QEMU. The wrapper drops the lock for
+ *     the call (soioctl's socket_lock(so, 1) keeps the socket referenced).
+ *     EPASSTHROUGH (not ours) becomes EOPNOTSUPP.
  * Everything else (sosend, soreceive, sopoll, sense) is xnu's default,
  * filled in by net_add_proto's pru_sanitize (bsd/kern/uipc_socket2.c).
  */
@@ -468,7 +473,10 @@ static int p##_xnu_abort(struct socket *so) { return p##_abort(so); }           
 static int p##_xnu_control(struct socket *so, u_long cmd, caddr_t data,        \
     struct ifnet *ifp, struct proc *pr)                                         \
 {                                                                               \
-	int err = p##_ioctl(so, cmd, data, ifp);                                \
+	int err;                                                                \
+	socket_unlock(so, 0);                                                   \
+	err = p##_ioctl(so, cmd, data, ifp);                                    \
+	socket_lock(so, 0);                                                     \
 	return err == EPASSTHROUGH ? EOPNOTSUPP : err;                          \
 }                                                                               \
 static int p##_xnu_peeraddr(struct socket *so, struct sockaddr **nam)          \
