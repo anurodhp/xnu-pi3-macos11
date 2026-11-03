@@ -751,7 +751,7 @@ typedef struct {
 /* No return parameter(s) */
 
 #define HCI_OCF_IO_CAPABILITY_REP			0x002b
-#define HCI_CMD_IO_CAPABILITY_REP			0x042a
+#define HCI_CMD_IO_CAPABILITY_REP			0x042B	/* OGF 1 | OCF 0x2b; was 0x042a (iokit port fix) */
 typedef struct {
 	bdaddr_t	bdaddr;		/* remote address */
 	uint8_t		io_cap;		/* IO capability */
