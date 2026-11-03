@@ -253,6 +253,10 @@ void netbt_sockopt_destroy(struct sockopt *);
 #define sockopt_destroy(s)              netbt_sockopt_destroy(s)
 #define PRCO_GETOPT             0
 #define PRCO_SETOPT             1
+#ifdef BLUETOOTH_DEBUG
+/* NetBSD sys/protosw.h names, for netbt's DPRINTFs. */
+static const char *const prcorequests[] __attribute__((unused)) = { "GETOPT", "SETOPT" };
+#endif
 
 /* ------------------------------------------------------------ callout(9) */
 
