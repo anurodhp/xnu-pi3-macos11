@@ -23,6 +23,7 @@
 
 lck_grp_t *netbt_lck_grp;
 kmutex_t *bt_lock;
+static lck_spin_t *netbt_callout_spin;
 
 /* ------------------------------------------------------------ domain */
 
@@ -93,6 +94,7 @@ bt_xnu_dom_init(struct domain *dp)
 	unsigned i;
 
 	netbt_lck_grp = lck_grp_alloc_init("netbt", LCK_GRP_ATTR_NULL);
+	netbt_callout_spin = lck_spin_alloc_init(netbt_lck_grp, LCK_ATTR_NULL);
 	bt_lock = dp->dom_mtx;
 	for (i = 0; i < __arraycount(btsw); i++) {
 		net_add_proto(&btsw[i], dp, 1);
@@ -159,7 +161,7 @@ netbt_sockopt_destroy(struct sockopt *s)
 }
 
 int
-netbt_sockopt_get(struct sockopt *s, void *buf, size_t len)
+netbt_sockopt_get(const struct sockopt *s, void *buf, size_t len)
 {
 	/* NetBSD sockopt_get: the size must match exactly (uipc_socket.c). */
 	if (s->sopt_valsize != len) {
@@ -172,7 +174,8 @@ netbt_sockopt_get(struct sockopt *s, void *buf, size_t len)
 		bcopy(CAST_DOWN(void *, s->sopt_val), buf, len);
 		return 0;
 	}
-	return sooptcopyin(s, buf, len, len);
+	/* sooptcopyin only lowers sopt_valsize, here already == len. */
+	return sooptcopyin(__DECONST(struct sockopt *, s), buf, len, len);
 }
 
 int
@@ -190,7 +193,7 @@ netbt_sockopt_set(struct sockopt *s, const void *buf, size_t len)
 }
 
 int
-netbt_sockopt_getint(struct sockopt *s, int *v)
+netbt_sockopt_getint(const struct sockopt *s, int *v)
 {
 	return netbt_sockopt_get(s, v, sizeof(*v));
 }
@@ -235,23 +238,8 @@ netbt_cv_timedwait_sig(kcondvar_t *cv, kmutex_t *m, int ticks)
 #define C_PENDING       0x1
 #define C_INVOKING      0x2
 
-static lck_grp_t *netbt_callout_grp;
-static lck_spin_t *netbt_callout_spin;
-
-static lck_spin_t *
-callout_spin(void)
-{
-	if (netbt_callout_spin == NULL) {
-		lck_grp_t *g = lck_grp_alloc_init("netbt-callout", LCK_GRP_ATTR_NULL);
-		lck_spin_t *s = lck_spin_alloc_init(g, LCK_ATTR_NULL);
-		if (!OSCompareAndSwapPtr(NULL, s, (void * volatile *)&netbt_callout_spin)) {
-			lck_spin_free(s, g);
-		} else {
-			netbt_callout_grp = g;
-		}
-	}
-	return netbt_callout_spin;
-}
+/* Set up in bt_xnu_dom_init, before netbt can create a callout. */
+#define callout_spin()  netbt_callout_spin
 
 static void
 callout_trampoline(thread_call_param_t p0, thread_call_param_t p1)
@@ -280,7 +268,6 @@ netbt_callout_init(struct callout *c, unsigned int flags)
 {
 	(void)flags;
 	bzero(c, sizeof(*c));
-	(void)callout_spin();
 	c->c_call = thread_call_allocate_with_options(callout_trampoline, c,
 	    THREAD_CALL_PRIORITY_KERNEL, 0);
 }

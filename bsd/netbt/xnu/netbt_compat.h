@@ -229,6 +229,8 @@ int netbt_sbappendaddr(struct sockbuf *, const struct sockaddr *, struct mbuf *,
 /* NetBSD sonewconn(head, soready); xnu sonewconn(head, connstatus, from). */
 #define sonewconn(head, ready)          sonewconn((head), (ready) ? SS_ISCONNECTED : 0, NULL)
 #define soroverflow(so)                 do { } while (0)
+/* NetBSD sbcreatecontrol takes void *; xnu's takes caddr_t. */
+#define sbcreatecontrol(p, sz, t, l)    sbcreatecontrol((caddr_t)(void *)(p), (sz), (t), (l))
 
 /*
  * struct sockopt: NetBSD's is a kernel buffer (sopt_data/sopt_size,
@@ -237,9 +239,9 @@ int netbt_sbappendaddr(struct sockbuf *, const struct sockaddr *, struct mbuf *,
  * (bsd/kern/uipc_socket.c). netbt only uses sopt_level/sopt_name and the
  * accessors below, so the accessors bridge the two.
  */
-int netbt_sockopt_get(struct sockopt *, void *, size_t);
+int netbt_sockopt_get(const struct sockopt *, void *, size_t);
 int netbt_sockopt_set(struct sockopt *, const void *, size_t);
-int netbt_sockopt_getint(struct sockopt *, int *);
+int netbt_sockopt_getint(const struct sockopt *, int *);
 int netbt_sockopt_setint(struct sockopt *, int);
 void netbt_sockopt_init(struct sockopt *, int level, int name, size_t size);
 void netbt_sockopt_destroy(struct sockopt *);
