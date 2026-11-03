@@ -14,6 +14,7 @@
 #include <sys/mbuf.h>
 #include <kern/thread_call.h>
 #include <kern/clock.h>
+#include <pexpert/pexpert.h>
 
 #include <netbt/bluetooth.h>
 #include <netbt/hci.h>
@@ -93,6 +94,11 @@ bt_xnu_dom_init(struct domain *dp)
 {
 	unsigned i;
 
+#ifdef BLUETOOTH_DEBUG
+	/* netbt's DPRINTF level (bluetooth.h; NetBSD sets it with sysctl
+	 * net.bluetooth.debug, which is not built here): boot-arg netbt-debug=N. */
+	(void)PE_parse_boot_argn("netbt-debug", &bluetooth_debug, sizeof(bluetooth_debug));
+#endif
 	netbt_lck_grp = lck_grp_alloc_init("netbt", LCK_GRP_ATTR_NULL);
 	netbt_callout_spin = lck_spin_alloc_init(netbt_lck_grp, LCK_ATTR_NULL);
 	bt_lock = dp->dom_mtx;
