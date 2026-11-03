@@ -31,6 +31,30 @@
 
 /* ------------------------------------------------------------ cdefs */
 
+/* NetBSD kernel code is under _KERNEL; xnu defines KERNEL. */
+#ifndef _KERNEL
+#define _KERNEL 1
+#endif
+#define __packed                __attribute__((__packed__))
+#ifndef __aligned
+#define __aligned(x)            __attribute__((__aligned__(x)))
+#endif
+/* NetBSD SIMPLEQ is the BSD STAILQ (xnu bsd/sys/queue.h). */
+#define SIMPLEQ_HEAD            STAILQ_HEAD
+#define SIMPLEQ_HEAD_INITIALIZER STAILQ_HEAD_INITIALIZER
+#define SIMPLEQ_ENTRY           STAILQ_ENTRY
+#define SIMPLEQ_INIT            STAILQ_INIT
+#define SIMPLEQ_FIRST           STAILQ_FIRST
+#define SIMPLEQ_NEXT            STAILQ_NEXT
+#define SIMPLEQ_EMPTY           STAILQ_EMPTY
+#define SIMPLEQ_FOREACH         STAILQ_FOREACH
+#define SIMPLEQ_FOREACH_SAFE    STAILQ_FOREACH_SAFE
+#define SIMPLEQ_INSERT_HEAD     STAILQ_INSERT_HEAD
+#define SIMPLEQ_INSERT_TAIL     STAILQ_INSERT_TAIL
+#define SIMPLEQ_INSERT_AFTER    STAILQ_INSERT_AFTER
+#define SIMPLEQ_REMOVE_HEAD     STAILQ_REMOVE_HEAD
+#define SIMPLEQ_REMOVE          STAILQ_REMOVE
+
 #define __KERNEL_RCSID(n, s)
 #define __arraycount(a)         (sizeof(a) / sizeof((a)[0]))
 #define __diagused              __unused
@@ -241,6 +265,8 @@ void netbt_sockopt_destroy(struct sockopt *);
  *                     dequeued but saw itself stopped
  * See netbt_xnu.c for the state machine.
  */
+/* xnu has its own struct callout (bsd/net/pktsched/pktsched.h:86). */
+#define callout                 netbt_callout
 struct callout {
 	thread_call_t c_call;
 	void (*c_func)(void *);

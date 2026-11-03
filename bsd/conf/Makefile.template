@@ -678,6 +678,13 @@ endif
 
 do_build_all:: do_all
 
+# --- netbt flags (tools/vendor_netbt_into_xnu.sh) ---
+NETBT_OBJS = bt_proto.o bt_sysctl.o hci_event.o hci_ioctl.o hci_link.o hci_misc.o hci_socket.o hci_unit.o l2cap_lower.o l2cap_misc.o l2cap_signal.o l2cap_socket.o l2cap_upper.o rfcomm_dlc.o rfcomm_session.o rfcomm_socket.o rfcomm_upper.o sco_socket.o sco_upper.o
+NETBT_CFLAGS = -I$(SRCROOT)/bsd/netbt/xnu -include $(SRCROOT)/bsd/netbt/xnu/netbt_compat.h \
+	-D_NETBT_XNU -Wno-error -Wno-everything
+$(foreach o,$(NETBT_OBJS),$(eval $(o)_CFLAGS_ADD += $(NETBT_CFLAGS)))
+# --- end netbt flags ---
+
 %RULES
 
 include $(MakeInc_rule)

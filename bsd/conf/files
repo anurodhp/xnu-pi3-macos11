@@ -590,3 +590,25 @@ bsd/tests/pmap_test_sysctl.c		optional config_xnupost
 bsd/tests/ptrauth_data_tests_sysctl.c		optional config_xnupost
 
 bsd/net/skywalk_stubs.c				standard
+
+# --- netbt (NetBSD Bluetooth), vendored by tools/vendor_netbt_into_xnu.sh ---
+bsd/netbt/bt_proto.c			optional sockets
+bsd/netbt/bt_sysctl.c			optional sockets
+bsd/netbt/hci_event.c			optional sockets
+bsd/netbt/hci_ioctl.c			optional sockets
+bsd/netbt/hci_link.c			optional sockets
+bsd/netbt/hci_misc.c			optional sockets
+bsd/netbt/hci_socket.c			optional sockets
+bsd/netbt/hci_unit.c			optional sockets
+bsd/netbt/l2cap_lower.c			optional sockets
+bsd/netbt/l2cap_misc.c			optional sockets
+bsd/netbt/l2cap_signal.c			optional sockets
+bsd/netbt/l2cap_socket.c			optional sockets
+bsd/netbt/l2cap_upper.c			optional sockets
+bsd/netbt/rfcomm_dlc.c			optional sockets
+bsd/netbt/rfcomm_session.c			optional sockets
+bsd/netbt/rfcomm_socket.c			optional sockets
+bsd/netbt/rfcomm_upper.c			optional sockets
+bsd/netbt/sco_socket.c			optional sockets
+bsd/netbt/sco_upper.c			optional sockets
+# --- end netbt ---
