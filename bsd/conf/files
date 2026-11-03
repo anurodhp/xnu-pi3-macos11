@@ -610,5 +610,6 @@ bsd/netbt/rfcomm_socket.c			optional sockets
 bsd/netbt/rfcomm_upper.c			optional sockets
 bsd/netbt/sco_socket.c			optional sockets
 bsd/netbt/sco_upper.c			optional sockets
+bsd/netbt/xnu/netbt_bridge.c			optional sockets
 bsd/netbt/xnu/netbt_xnu.c			optional sockets
 # --- end netbt ---
