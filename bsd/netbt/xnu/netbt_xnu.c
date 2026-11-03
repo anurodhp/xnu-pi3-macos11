@@ -155,7 +155,8 @@ void
 netbt_sockopt_destroy(struct sockopt *s)
 {
 	if (s->sopt_p == NULL && s->sopt_val != USER_ADDR_NULL) {
-		kheap_free(KHEAP_DEFAULT, CAST_DOWN(void *, s->sopt_val), NETBT_SOPT_MAX);
+		void *buf = CAST_DOWN(void *, s->sopt_val);
+		kheap_free(KHEAP_DEFAULT, buf, NETBT_SOPT_MAX);
 		s->sopt_val = USER_ADDR_NULL;
 	}
 }
