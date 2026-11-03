@@ -358,11 +358,13 @@ hci_attach(struct socket *so, int proto)
 
 	KASSERT(so->so_pcb == NULL);
 
+#ifndef _NETBT_XNU
 	if (so->so_lock == NULL) {
 		mutex_obj_hold(bt_lock);
 		so->so_lock = bt_lock;
 		solock(so);
 	}
+#endif	/* xnu: so_lock is the domain mutex, bt_lock itself (netbt_compat.h) */
 	KASSERT(solocked(so));
 
 	error = soreserve(so, hci_sendspace, hci_recvspace);
@@ -907,6 +909,7 @@ hci_mtap(struct mbuf *m, struct hci_unit *unit)
 	}
 }
 
+#ifndef _NETBT_XNU
 PR_WRAP_USRREQS(hci)
 
 #define	hci_attach		hci_attach_wrapper
@@ -950,3 +953,7 @@ const struct pr_usrreqs hci_usrreqs = {
 	.pr_sendoob	= hci_sendoob,
 	.pr_purgeif	= hci_purgeif,
 };
+#else
+/* xnu pr_usrreqs wrappers around the handlers above (netbt_compat.h) */
+NETBT_XNU_USRREQS(hci)
+#endif

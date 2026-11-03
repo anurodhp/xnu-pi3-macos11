@@ -122,10 +122,17 @@ struct btproto {
 	void (*input)(void *, struct mbuf *);
 };
 
+#ifndef _NETBT_XNU
 extern const struct pr_usrreqs hci_usrreqs;
 extern const struct pr_usrreqs sco_usrreqs;
 extern const struct pr_usrreqs l2cap_usrreqs;
 extern const struct pr_usrreqs rfcomm_usrreqs;
+#else	/* xnu's net_add_proto fills defaults into these (pru_sanitize) */
+extern struct pr_usrreqs hci_usrreqs;
+extern struct pr_usrreqs sco_usrreqs;
+extern struct pr_usrreqs l2cap_usrreqs;
+extern struct pr_usrreqs rfcomm_usrreqs;
+#endif
 
 extern kmutex_t *bt_lock;
 

@@ -379,4 +379,144 @@ struct sysctllog;
 #define getmicrotime(tv)                microtime(tv)
 #endif
 
+/* ------------------------------------------------------------ byte order, misc */
+
+#include <libkern/OSByteOrder.h>
+#define htole16(x)              OSSwapHostToLittleInt16(x)
+#define htole32(x)              OSSwapHostToLittleInt32(x)
+#define htole64(x)              OSSwapHostToLittleInt64(x)
+#define le16toh(x)              OSSwapLittleToHostInt16(x)
+#define le32toh(x)              OSSwapLittleToHostInt32(x)
+#define le64toh(x)              OSSwapLittleToHostInt64(x)
+#define htobe16(x)              OSSwapHostToBigInt16(x)
+#define be16toh(x)              OSSwapBigToHostInt16(x)
+static inline void le16enc(void *p, uint16_t v) { uint8_t *b = p; b[0] = v; b[1] = v >> 8; }
+static inline void le32enc(void *p, uint32_t v) { uint8_t *b = p; b[0] = v; b[1] = v >> 8; b[2] = v >> 16; b[3] = v >> 24; }
+static inline void le64enc(void *p, uint64_t v) { le32enc(p, (uint32_t)v); le32enc((uint8_t *)p + 4, (uint32_t)(v >> 32)); }
+static inline uint16_t le16dec(const void *p) { const uint8_t *b = p; return (uint16_t)(b[0] | b[1] << 8); }
+static inline uint32_t le32dec(const void *p) { const uint8_t *b = p; return b[0] | b[1] << 8 | b[2] << 16 | (uint32_t)b[3] << 24; }
+static inline u_int uimin(u_int a, u_int b) { return a < b ? a : b; }
+static inline u_int uimax(u_int a, u_int b) { return a > b ? a : b; }
+/* NetBSD's "pass to the next ioctl handler" (sys/errno.h); turned into
+ * EOPNOTSUPP at the xnu boundary (NETBT_XNU_USRREQS). */
+#define EPASSTHROUGH            (-4)
+/*
+ * M_LINK0: hci_unit.c marks received packets with it for hci_mtap's
+ * direction flag (hci_socket.c:877). xnu's M_PROTO1 (sys/mbuf.h) is the
+ * protocol-private flag; nothing in the socket layer reads it.
+ */
+#define M_LINK0                 M_PROTO1
+
+/* ------------------------------------------------------------ pr_usrreqs */
+
+/*
+ * NETBT_XNU_USRREQS(p) stands in for each *_socket.c's NetBSD pr_usrreqs
+ * table (guarded #ifndef _NETBT_XNU in our fork) and defines `p_usrreqs`
+ * as an xnu struct pr_usrreqs (bsd/sys/protosw.h) whose entries call the
+ * file's static NetBSD handlers:
+ *   - attach: xnu's socreate() calls pru_attach unlocked with a proc,
+ *     sonewconn() with the listening socket (same domain mutex) locked
+ *     and a NULL proc (bsd/kern/uipc_socket.c:781, uipc_socket2.c:425);
+ *     NetBSD's handlers run with bt_lock held, so it is taken only in the
+ *     first case.
+ *   - accept/peeraddr/sockaddr: NetBSD fills a caller's buffer, xnu wants
+ *     an allocated sockaddr (dup_sockaddr, bsd/kern/uipc_socket2.c).
+ *   - detach: NetBSD void; xnu frees the socket itself after pru_detach
+ *     once so_pcb is NULL (soclose_locked/sofreelastref), which the
+ *     NetBSD *_detach_pcb does.
+ *   - send: xnu passes PRUS_OOB in flags; NetBSD has a separate sendoob.
+ *   - ioctl: EPASSTHROUGH (not ours) becomes EOPNOTSUPP.
+ * Everything else (sosend, soreceive, sopoll, sense) is xnu's default,
+ * filled in by net_add_proto's pru_sanitize (bsd/kern/uipc_socket2.c).
+ */
+#define NETBT_XNU_USRREQS(p)                                                    \
+static int p##_xnu_attach(struct socket *so, int proto, struct proc *pr)       \
+{                                                                               \
+	int err;                                                                \
+	if (pr != NULL) mutex_enter(bt_lock);                                   \
+	err = p##_attach(so, proto);                                            \
+	if (pr != NULL) mutex_exit(bt_lock);                                    \
+	return err;                                                             \
+}                                                                               \
+static int p##_xnu_detach(struct socket *so)                                   \
+{ p##_detach(so); so->so_flags |= SOF_PCBCLEARING; return 0; }                 \
+static int p##_xnu_accept(struct socket *so, struct sockaddr **nam)            \
+{                                                                               \
+	struct sockaddr_bt sa; int err;                                         \
+	bzero(&sa, sizeof(sa));                                                 \
+	err = p##_accept(so, (struct sockaddr *)&sa);                           \
+	if (err == 0) {                                                         \
+	        sa.bt_len = sizeof(sa); sa.bt_family = AF_BLUETOOTH;            \
+	        *nam = dup_sockaddr((struct sockaddr *)&sa, 1);                 \
+	        if (*nam == NULL) err = ENOMEM;                                 \
+	}                                                                       \
+	return err;                                                             \
+}                                                                               \
+static int p##_xnu_bind(struct socket *so, struct sockaddr *nam, struct proc *pr) \
+{ return p##_bind(so, nam, pr); }                                               \
+static int p##_xnu_listen(struct socket *so, struct proc *pr)                  \
+{ return p##_listen(so, pr); }                                                  \
+static int p##_xnu_connect(struct socket *so, struct sockaddr *nam, struct proc *pr) \
+{ return p##_connect(so, nam, pr); }                                            \
+static int p##_xnu_connect2(struct socket *so, struct socket *so2)             \
+{ return p##_connect2(so, so2); }                                               \
+static int p##_xnu_disconnect(struct socket *so) { return p##_disconnect(so); } \
+static int p##_xnu_shutdown(struct socket *so) { return p##_shutdown(so); }     \
+static int p##_xnu_abort(struct socket *so) { return p##_abort(so); }           \
+static int p##_xnu_control(struct socket *so, u_long cmd, caddr_t data,        \
+    struct ifnet *ifp, struct proc *pr)                                         \
+{                                                                               \
+	int err = p##_ioctl(so, cmd, data, ifp);                                \
+	return err == EPASSTHROUGH ? EOPNOTSUPP : err;                          \
+}                                                                               \
+static int p##_xnu_peeraddr(struct socket *so, struct sockaddr **nam)          \
+{                                                                               \
+	struct sockaddr_bt sa; int err;                                         \
+	bzero(&sa, sizeof(sa));                                                 \
+	err = p##_peeraddr(so, (struct sockaddr *)&sa);                         \
+	if (err == 0 && (*nam = dup_sockaddr((struct sockaddr *)&sa, 1)) == NULL) \
+	        err = ENOMEM;                                                   \
+	return err;                                                             \
+}                                                                               \
+static int p##_xnu_sockaddr(struct socket *so, struct sockaddr **nam)          \
+{                                                                               \
+	struct sockaddr_bt sa; int err;                                         \
+	bzero(&sa, sizeof(sa));                                                 \
+	err = p##_sockaddr(so, (struct sockaddr *)&sa);                         \
+	if (err == 0 && (*nam = dup_sockaddr((struct sockaddr *)&sa, 1)) == NULL) \
+	        err = ENOMEM;                                                   \
+	return err;                                                             \
+}                                                                               \
+static int p##_xnu_rcvd(struct socket *so, int flags)                          \
+{ return p##_rcvd(so, flags, current_proc()); }                                 \
+static int p##_xnu_rcvoob(struct socket *so, struct mbuf *m, int flags)        \
+{ return p##_recvoob(so, m, flags); }                                           \
+static int p##_xnu_send(struct socket *so, int flags, struct mbuf *m,          \
+    struct sockaddr *nam, struct mbuf *control, struct proc *pr)                \
+{                                                                               \
+	if (flags & PRUS_OOB)                                                   \
+	        return p##_sendoob(so, m, control);                             \
+	return p##_send(so, m, nam, control, pr);                               \
+}                                                                               \
+struct pr_usrreqs p##_usrreqs = {                                              \
+	.pru_attach = p##_xnu_attach,                                           \
+	.pru_detach = p##_xnu_detach,                                           \
+	.pru_accept = p##_xnu_accept,                                           \
+	.pru_bind = p##_xnu_bind,                                               \
+	.pru_listen = p##_xnu_listen,                                           \
+	.pru_connect = p##_xnu_connect,                                         \
+	.pru_connect2 = p##_xnu_connect2,                                       \
+	.pru_disconnect = p##_xnu_disconnect,                                   \
+	.pru_shutdown = p##_xnu_shutdown,                                       \
+	.pru_abort = p##_xnu_abort,                                             \
+	.pru_control = p##_xnu_control,                                         \
+	.pru_peeraddr = p##_xnu_peeraddr,                                       \
+	.pru_sockaddr = p##_xnu_sockaddr,                                       \
+	.pru_rcvd = p##_xnu_rcvd,                                               \
+	.pru_rcvoob = p##_xnu_rcvoob,                                           \
+	.pru_send = p##_xnu_send,                                               \
+	.pru_sosend = sosend,                                                   \
+	.pru_soreceive = soreceive,                                             \
+};
+
 #endif /* _NETBT_COMPAT_H_ */

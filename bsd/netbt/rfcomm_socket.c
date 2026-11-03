@@ -88,11 +88,13 @@ rfcomm_attach(struct socket *so, int proto)
 
 	KASSERT(so->so_pcb == NULL);
 
+#ifndef _NETBT_XNU
 	if (so->so_lock == NULL) {
 		mutex_obj_hold(bt_lock);
 		so->so_lock = bt_lock;
 		solock(so);
 	}
+#endif	/* xnu: so_lock is the domain mutex, bt_lock itself (netbt_compat.h) */
 	KASSERT(solocked(so));
 
 	/*
@@ -507,6 +509,7 @@ rfcomm_input(void *arg, struct mbuf *m)
 	sorwakeup(so);
 }
 
+#ifndef _NETBT_XNU
 PR_WRAP_USRREQS(rfcomm)
 
 #define	rfcomm_attach		rfcomm_attach_wrapper
@@ -550,3 +553,7 @@ const struct pr_usrreqs rfcomm_usrreqs = {
 	.pr_sendoob	= rfcomm_sendoob,
 	.pr_purgeif	= rfcomm_purgeif,
 };
+#else
+/* xnu pr_usrreqs wrappers around the handlers above (netbt_compat.h) */
+NETBT_XNU_USRREQS(rfcomm)
+#endif
