@@ -3,6 +3,7 @@
 #include <libkern/OSAtomic.h>
 #include <pexpert/pexpert.h>
 #include <stdarg.h>
+#include <sys/errno.h>
 
 #include "BCM43430Bluetooth.h"
 #include "BCM2837Mailbox.h"
