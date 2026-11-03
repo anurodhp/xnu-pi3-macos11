@@ -691,6 +691,7 @@ extern struct domain keydomain_s;
 
 extern struct domain routedomain_s, ndrvdomain_s, inetdomain_s;
 extern struct domain systemdomain_s, localdomain_s;
+extern struct domain btdomain_s;        /* bsd/netbt/xnu/netbt_xnu.c (NetBSD netbt port) */
 extern struct domain vsockdomain_s;
 
 #if MULTIPATH
@@ -807,6 +808,13 @@ domaininit(void)
 #endif /* MULTIPATH */
 	attach_domain(&systemdomain_s);
 	attach_domain(&localdomain_s);
+	/*
+	 * Bluetooth (AF_BLUETOOTH): NetBSD's netbt, vendored by the iokit repo's
+	 * tools/vendor_netbt_into_xnu.sh. Registered unconditionally like the
+	 * other built-in domains; nothing happens until a controller driver
+	 * (BCM43430Bluetooth, boot-arg bt=1) attaches an HCI unit.
+	 */
+	attach_domain(&btdomain_s);
 #if IPSEC
 	attach_domain(&keydomain_s);
 #endif /* IPSEC */

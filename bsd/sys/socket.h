@@ -594,7 +594,8 @@ struct so_np_extensions {
 #define AF_MULTIPATH    39
 #endif /* PRIVATE */
 #define AF_VSOCK        40              /* VM Sockets */
-#define AF_MAX          41
+#define AF_BLUETOOTH    41              /* Bluetooth: HCI, L2CAP, RFCOMM, SCO (NetBSD netbt port; NetBSD's own value, 31, is AF_NATM here) */
+#define AF_MAX          42
 #endif  /* (!_POSIX_C_SOURCE || _DARWIN_C_SOURCE) */
 
 /*
@@ -690,6 +691,7 @@ struct sockaddr_storage {
 #define PF_MULTIPATH    AF_MULTIPATH
 #endif /* PRIVATE */
 #define PF_VSOCK        AF_VSOCK
+#define PF_BLUETOOTH    AF_BLUETOOTH
 #define PF_MAX          AF_MAX
 
 /*
