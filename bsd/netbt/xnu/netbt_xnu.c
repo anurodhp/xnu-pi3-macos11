@@ -267,7 +267,13 @@ callout_trampoline(thread_call_param_t p0, thread_call_param_t p1)
 	c->c_thread = current_thread();
 	lck_spin_unlock(callout_spin());
 	fn(arg);
-	/* c may be freed by now (the handler acked and destroyed it). */
+	/*
+	 * c may be freed by now (the handler acked and destroyed it), so
+	 * c_thread is not cleared. It may later match a pooled thread-call
+	 * thread that runs netbt_callout_destroy for this callout; destroy
+	 * then skips thread_call_cancel_wait, which is harmless because the
+	 * handler is not running at that point.
+	 */
 }
 
 void
@@ -291,6 +297,10 @@ netbt_callout_schedule(struct callout *c, int ticks)
 {
 	uint64_t deadline;
 
+	if (c->c_call == NULL) {
+		printf("netbt: callout %p scheduled without a thread call\n", c);
+		return;
+	}
 	if (ticks < 1) {
 		ticks = 1;
 	}
