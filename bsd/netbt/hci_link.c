@@ -449,6 +449,10 @@ hci_acl_recv(struct mbuf *m, struct hci_unit *unit)
 		goto bad;
 
 	link = hci_link_lookup_handle(unit, handle);
+	if (link == NULL && hci_le_link_lookup(unit, handle) >= 0) {
+		/* an LE link: hci_mtap() gave it to the raw sockets already */
+		goto bad;
+	}
 	if (link == NULL) {
 		hci_discon_cp cp;
 
@@ -1058,4 +1062,168 @@ hci_link_lookup_handle(struct hci_unit *unit, uint16_t handle)
 	}
 
 	return link;
+}
+
+/*
+ * LE links (iokit port; see struct hci_unit). The handles come from LE
+ * Connection Complete (hci_event_le_meta) and go on Disconnection
+ * Complete. Raw sockets do everything else; netbt only keeps the buffer
+ * accounting whole, as hci_acl_complete() and hci_link_free() do for
+ * ACL links.
+ */
+#define HCI_LE_USED	0x8000
+
+int
+hci_le_link_lookup(struct hci_unit *unit, uint16_t handle)
+{
+	int i;
+
+	for (i = 0; i < HCI_LE_MAX_LINKS; i++)
+		if (unit->hci_le_handle[i] == (HCI_LE_USED | handle))
+			return i;
+	return -1;
+}
+
+void
+hci_le_link_add(struct hci_unit *unit, uint16_t handle)
+{
+	int i;
+
+	if (hci_le_link_lookup(unit, handle) >= 0)
+		return;
+	for (i = 0; i < HCI_LE_MAX_LINKS; i++) {
+		if (unit->hci_le_handle[i] == 0) {
+			unit->hci_le_handle[i] = HCI_LE_USED | handle;
+			unit->hci_le_unacked[i] = 0;
+			DPRINTF("(%s) LE handle #%d\n",
+			    device_xname(unit->hci_dev), handle);
+			return;
+		}
+	}
+	aprint_error_dev(unit->hci_dev,
+	    "no room to track LE handle #%d\n", handle);
+}
+
+/*
+ * The link is gone: the controller has dropped what it still held for it
+ * (Core Vol 4 Part E 4.3: after Disconnection Complete the host considers
+ * those buffers free), and its queued packets go too.
+ */
+void
+hci_le_link_free(struct hci_unit *unit, uint16_t handle)
+{
+	MBUFQ_HEAD() keep;
+	struct mbuf *m;
+	hci_acldata_hdr_t hdr;
+	int i;
+
+	i = hci_le_link_lookup(unit, handle);
+	if (i < 0)
+		return;
+
+	unit->hci_num_acl_pkts += unit->hci_le_unacked[i];
+	unit->hci_le_unacked_total -= unit->hci_le_unacked[i];
+	unit->hci_le_unacked[i] = 0;
+	unit->hci_le_handle[i] = 0;
+
+	MBUFQ_INIT(&keep);
+	while (MBUFQ_FIRST(&unit->hci_le_txq) != NULL) {
+		MBUFQ_DEQUEUE(&unit->hci_le_txq, m);
+		m_copydata(m, 0, sizeof(hdr), &hdr);
+		if (HCI_CON_HANDLE(le16toh(hdr.con_handle)) == handle) {
+			m_freem(m);
+			unit->hci_le_txqlen--;
+		} else
+			MBUFQ_ENQUEUE(&keep, m);
+	}
+	while (MBUFQ_FIRST(&keep) != NULL) {
+		MBUFQ_DEQUEUE(&keep, m);
+		MBUFQ_ENQUEUE(&unit->hci_le_txq, m);
+	}
+
+	DPRINTF("(%s) LE handle #%d gone\n",
+	    device_xname(unit->hci_dev), handle);
+	hci_le_start(unit);
+}
+
+/* Number Of Completed Packets for LE link i: num buffers are back */
+void
+hci_le_link_complete(struct hci_unit *unit, int i, int num)
+{
+
+	if (num > unit->hci_le_unacked[i]) {
+		aprint_error_dev(unit->hci_dev,
+		    "LE handle #%d completed %d, had %d\n",
+		    unit->hci_le_handle[i] & ~HCI_LE_USED, num,
+		    unit->hci_le_unacked[i]);
+		num = unit->hci_le_unacked[i];
+	}
+	unit->hci_le_unacked[i] -= num;
+	unit->hci_le_unacked_total -= num;
+	unit->hci_num_acl_pkts += num;
+}
+
+/*
+ * An ACL packet from a raw socket, already checked by hci_send(): the
+ * whole HCI packet, type byte included.
+ */
+int
+hci_le_output(struct hci_unit *unit, struct mbuf *m)
+{
+	hci_acldata_hdr_t hdr;
+
+	m_copydata(m, 0, sizeof(hdr), &hdr);
+	if (hci_le_link_lookup(unit,
+	    HCI_CON_HANDLE(le16toh(hdr.con_handle))) < 0) {
+		m_freem(m);
+		return ENOTCONN;
+	}
+	if (le16toh(hdr.length) > unit->hci_max_acl_size) {
+		m_freem(m);
+		return EMSGSIZE;
+	}
+	if (unit->hci_le_txqlen >= HCI_LE_MAX_TXQ) {
+		m_freem(m);
+		return ENOBUFS;
+	}
+	MBUFQ_ENQUEUE(&unit->hci_le_txq, m);
+	unit->hci_le_txqlen++;
+	hci_le_start(unit);
+	return 0;
+}
+
+void
+hci_le_start(struct hci_unit *unit)
+{
+	struct mbuf *m;
+	hci_acldata_hdr_t hdr;
+	int i;
+
+	while (unit->hci_num_acl_pkts > 0
+	    && unit->hci_le_unacked_total < HCI_LE_MAX_UNACKED
+	    && MBUFQ_FIRST(&unit->hci_le_txq) != NULL) {
+		MBUFQ_DEQUEUE(&unit->hci_le_txq, m);
+		unit->hci_le_txqlen--;
+		m_copydata(m, 0, sizeof(hdr), &hdr);
+		i = hci_le_link_lookup(unit, HCI_CON_HANDLE(le16toh(hdr.con_handle)));
+		if (i < 0) {
+			m_freem(m);
+			continue;
+		}
+		unit->hci_le_unacked[i]++;
+		unit->hci_le_unacked_total++;
+		hci_output_acl(unit, m);
+	}
+}
+
+/* the unit is going down: forget every LE link */
+void
+hci_le_reset(struct hci_unit *unit)
+{
+
+	memset(unit->hci_le_handle, 0, sizeof(unit->hci_le_handle));
+	memset(unit->hci_le_unacked, 0, sizeof(unit->hci_le_unacked));
+	unit->hci_le_unacked_total = 0;
+	MBUFQ_DRAIN(&unit->hci_le_txq);
+	unit->hci_le_txqlen = 0;
 }

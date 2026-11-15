@@ -2513,6 +2513,17 @@ struct hci_if {
 };
 
 /*
+ * LE links a unit tracks for raw sockets (iokit port), and the most LE
+ * packets it lets the controller hold at once. One keeps this correct
+ * whether the controller shares its ACL buffers with LE (LE Read Buffer
+ * Size returns 0) or has LE buffers of its own: an LE packet is debited
+ * from the ACL count and credited back on Number Of Completed Packets.
+ */
+#define HCI_LE_MAX_LINKS	4
+#define HCI_LE_MAX_UNACKED	1
+#define HCI_LE_MAX_TXQ		32
+
+/*
  * The Bluetooth HCI device unit structure
  */
 struct hci_unit {
@@ -2563,6 +2574,19 @@ struct hci_unit {
 	MBUFQ_HEAD()		 hci_cmdwait;	/* pending commands */
 	MBUFQ_HEAD()		 hci_scodone;	/* SCO done queue */
 
+	/*
+	 * LE links (iokit port). netbt has no LE protocols; a root raw HCI
+	 * socket owns each LE link and sends its ACL data (hci_le_output).
+	 * netbt only remembers the handles, so that it neither disconnects
+	 * them as unknown nor loses their buffer credits, and queues their
+	 * packets against the shared ACL buffer count.
+	 */
+	uint16_t		 hci_le_handle[HCI_LE_MAX_LINKS]; /* 0x8000|handle, 0 free */
+	uint16_t		 hci_le_unacked[HCI_LE_MAX_LINKS];
+	uint16_t		 hci_le_unacked_total;
+	MBUFQ_HEAD()		 hci_le_txq;	/* LE ACL waiting for a buffer */
+	uint16_t		 hci_le_txqlen;
+
 	SIMPLEQ_ENTRY(hci_unit) hci_next;
 };
 
@@ -2597,6 +2621,13 @@ struct hci_link *hci_link_alloc(struct hci_unit *, bdaddr_t *, uint8_t);
 void hci_link_free(struct hci_link *, int);
 struct hci_link *hci_link_lookup_bdaddr(struct hci_unit *, bdaddr_t *, uint8_t);
 struct hci_link *hci_link_lookup_handle(struct hci_unit *, uint16_t);
+void hci_le_link_add(struct hci_unit *, uint16_t);
+void hci_le_link_free(struct hci_unit *, uint16_t);
+int hci_le_link_lookup(struct hci_unit *, uint16_t);
+void hci_le_link_complete(struct hci_unit *, int, int);
+int hci_le_output(struct hci_unit *, struct mbuf *);
+void hci_le_start(struct hci_unit *);
+void hci_le_reset(struct hci_unit *);
 
 /* hci_misc.c */
 int hci_route_lookup(bdaddr_t *, bdaddr_t *);

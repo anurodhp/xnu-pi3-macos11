@@ -42,6 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD: hci_event.c,v 1.26 2019/09/28 07:06:33 plunky Exp $"
 
 #include <netbt/bluetooth.h>
 #include <netbt/hci.h>
+#include <netbt/hci_le.h>
 #include <netbt/sco.h>
 
 static void hci_event_inquiry_result(struct hci_unit *, struct mbuf *);
@@ -51,6 +52,7 @@ static void hci_event_command_status(struct hci_unit *, struct mbuf *);
 static void hci_event_command_compl(struct hci_unit *, struct mbuf *);
 static void hci_event_con_compl(struct hci_unit *, struct mbuf *);
 static void hci_event_discon_compl(struct hci_unit *, struct mbuf *);
+static void hci_event_le_meta(struct hci_unit *, struct mbuf *);
 static void hci_event_con_req(struct hci_unit *, struct mbuf *);
 static void hci_event_num_compl_pkts(struct hci_unit *, struct mbuf *);
 static void hci_event_auth_compl(struct hci_unit *, struct mbuf *);
@@ -233,6 +235,10 @@ hci_event(struct mbuf *m, struct hci_unit *unit)
 		hci_event_read_clock_offset_compl(unit, m);
 		break;
 
+	case HCI_LE_META_EVENT:
+		hci_event_le_meta(unit, m);
+		break;
+
 	default:
 		break;
 	}
@@ -382,7 +388,7 @@ hci_event_num_compl_pkts(struct hci_unit *unit, struct mbuf *m)
 	hci_num_compl_pkts_ep ep;
 	struct hci_link *link, *next;
 	uint16_t handle, num;
-	int num_acl = 0, num_sco = 0;
+	int num_acl = 0, num_sco = 0, le;
 
 	if (m->m_pkthdr.len < sizeof(ep))
 		return;
@@ -411,6 +417,9 @@ hci_event_num_compl_pkts(struct hci_unit *unit, struct mbuf *m)
 				num_sco += num;
 				hci_sco_complete(link, num);
 			}
+		} else if ((le = hci_le_link_lookup(unit, handle)) >= 0) {
+			/* credits the ACL count itself */
+			hci_le_link_complete(unit, le, num);
 		} else {
 			/* XXX need to issue Read_Buffer_Size or Reset? */
 			aprint_error_dev(unit->hci_dev,
@@ -429,6 +438,7 @@ hci_event_num_compl_pkts(struct hci_unit *unit, struct mbuf *m)
 
 	unit->hci_num_acl_pkts += num_acl;
 	unit->hci_num_sco_pkts += num_sco;
+	hci_le_start(unit);
 
 	link = TAILQ_FIRST(&unit->hci_links);
 	while (link && (unit->hci_num_acl_pkts > 0 || unit->hci_num_sco_pkts > 0)) {
@@ -687,6 +697,31 @@ hci_event_discon_compl(struct hci_unit *unit, struct mbuf *m)
 	link = hci_link_lookup_handle(unit, HCI_CON_HANDLE(ep.con_handle));
 	if (link)
 		hci_link_free(link, ENOLINK);
+	else if (ep.status == 0)
+		hci_le_link_free(unit, HCI_CON_HANDLE(ep.con_handle));
+}
+
+/*
+ * LE Meta event (iokit port): note the handle of each new LE link
+ * (Core Vol 4 Part E 7.7.65.1 LE Connection Complete, 7.7.65.10 LE
+ * Enhanced Connection Complete: subevent, status, then the handle). The
+ * raw socket that asked for the connection gets the event too.
+ */
+static void
+hci_event_le_meta(struct hci_unit *unit, struct mbuf *m)
+{
+	uint8_t hdr[4];		/* subevent, status, handle */
+	uint16_t handle;
+
+	if (m->m_pkthdr.len < sizeof(hdr))
+		return;
+	m_copydata(m, 0, sizeof(hdr), hdr);
+	if (hdr[0] != HCI_SUBEVT_CON_COMP && hdr[0] != 0x0a)
+		return;
+	if (hdr[1] != 0)
+		return;
+	handle = HCI_CON_HANDLE(hdr[2] | (hdr[3] << 8));
+	hci_le_link_add(unit, handle);
 }
 
 /*

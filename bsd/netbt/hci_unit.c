@@ -108,6 +108,7 @@ hci_attach_pcb(const struct hci_if *hci_if, device_t dev, uint16_t flags)
 	MBUFQ_INIT(&unit->hci_scorxq);
 	MBUFQ_INIT(&unit->hci_cmdwait);
 	MBUFQ_INIT(&unit->hci_scodone);
+	MBUFQ_INIT(&unit->hci_le_txq);
 
 	TAILQ_INIT(&unit->hci_links);
 	LIST_INIT(&unit->hci_memos);
@@ -263,6 +264,7 @@ hci_disable(struct hci_unit *unit)
 
 	MBUFQ_DRAIN(&unit->hci_cmdwait);
 	MBUFQ_DRAIN(&unit->hci_scodone);
+	hci_le_reset(unit);
 }
 
 struct hci_unit *

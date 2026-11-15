@@ -591,6 +591,41 @@ hci_recvoob(struct socket *so, struct mbuf *m, int flags)
 }
 
 static int
+hci_send_le_acl(struct hci_pcb *pcb, struct sockaddr_bt *sa, struct mbuf *m)
+{
+	struct hci_unit *unit;
+	hci_acldata_hdr_t hdr;
+	int err;
+
+	if (m->m_pkthdr.len < sizeof(hdr)) {
+		err = EMSGSIZE;
+		goto bad;
+	}
+	m_copydata(m, 0, sizeof(hdr), &hdr);
+	if (m->m_pkthdr.len != sizeof(hdr) + le16toh(hdr.length)) {
+		err = EMSGSIZE;
+		goto bad;
+	}
+	unit = hci_unit_lookup((sa ? &sa->bt_bdaddr : &pcb->hp_raddr));
+	if (unit == NULL) {
+		err = ENETDOWN;
+		goto bad;
+	}
+	if (pcb->hp_cred != NULL
+	    && kauth_authorize_device(pcb->hp_cred,
+	    KAUTH_DEVICE_BLUETOOTH_SEND,
+	    unit, &hdr, NULL, NULL) != 0) {
+		err = EPERM;
+		goto bad;
+	}
+	return hci_le_output(unit, m);	/* takes m */
+
+bad:
+	m_freem(m);
+	return err;
+}
+
+static int
 hci_send(struct socket *so, struct mbuf *m, struct sockaddr *nam,
     struct mbuf *control, struct lwp *l)
 {
@@ -630,6 +665,15 @@ hci_send(struct socket *so, struct mbuf *m, struct sockaddr *nam,
 	}
 	m_copydata(m, 0, sizeof(hdr), &hdr);
 	hdr.opcode = le16toh(hdr.opcode);
+
+	/*
+	 * ACL data for an LE link (iokit port; see struct hci_unit): only
+	 * root, which kauth_authorize_device() allows everything, and only
+	 * on a handle hci_event_le_meta() recorded. hci_device_cb() looks at
+	 * nothing past the type byte of a non-command packet, and refuses it.
+	 */
+	if (hdr.type == HCI_ACL_DATA_PKT)
+		return hci_send_le_acl(pcb, sa, m);
 
 	/* only allows CMD packets to be sent */
 	if (hdr.type != HCI_CMD_PKT) {
