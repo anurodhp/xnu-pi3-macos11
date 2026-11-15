@@ -80,6 +80,8 @@ iokit/Drivers/BCM2837/BCM2837USBHostController.cpp	optional iokitcpp
 iokit/Drivers/BCM2837/SMSC9514USBTransport.cpp	optional iokitcpp
 iokit/Drivers/BCM2837/SMSC9514Ethernet.cpp		optional iokitcpp
 iokit/Drivers/BCM2837/SMSC9514USBDriver.cpp		optional iokitcpp
+iokit/Drivers/BCM2837/LAN7800Ethernet.cpp		optional iokitcpp
+iokit/Drivers/BCM2837/LAN7800USBDriver.cpp		optional iokitcpp
 iokit/Drivers/BCM2837/BCM2837Mailbox.cpp		optional iokitcpp
 iokit/Drivers/BCM2837/BCM2837V3D.cpp		optional iokitcpp
 iokit/Drivers/BCM2837/BCM2837V3DUserClient.cpp	optional iokitcpp
